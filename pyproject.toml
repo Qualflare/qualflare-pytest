@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qualflare-pytest"
-version = "0.1.0"
+version = "0.1.1"
 description = "Native pytest plugin for Qualflare — results, per-attempt retry history, flakiness, steps and attachments, with pytest-xdist support."
 readme = "README.md"
 requires-python = ">=3.9"

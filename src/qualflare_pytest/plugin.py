@@ -34,7 +34,7 @@ from .replay import replay
 from .runtime import _bind, _unbind
 from .wire import Case, Collect, Metadata, Suite
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def pytest_addoption(parser: Any) -> None:
