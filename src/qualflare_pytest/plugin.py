@@ -67,6 +67,15 @@ class QualflarePlugin:
         bucket = getattr(item, "_qualflare_bucket", None)
         if bucket is None:
             return
+        if report.when == "setup":
+            # Each retry re-runs setup, and pytest-rerunfailures loops INSIDE a
+            # single pytest_runtest_protocol call -- so without this the bucket is
+            # shared across attempts and every label, tag and step is counted once
+            # per attempt. Measured: a reruns=2 test produced three copies of each.
+            # Clearing here scopes messages to the attempt that is about to run,
+            # which is what makes final-attempt-wins actually hold.
+            bucket["messages"] = []
+
         if report.when == "call" or (report.when == "setup" and report.outcome != "passed"):
             # execution_count is set only by pytest-rerunfailures, and only on the
             # tests it manages -- absent everywhere else.
@@ -109,8 +118,16 @@ class QualflarePlugin:
         }
 
         if report.outcome == "rerun":
+            # `when` is carried because rerunfailures also retries SETUP failures.
+            # Without it every attempt is labelled "failed", which blames the test
+            # body for a flaky fixture -- contradicting map_status's own rule that
+            # a setup failure is an `error`.
             self._reruns.setdefault(nodeid, []).append(
-                {**entry, "execution_count": (meta or {}).get("execution_count")}
+                {
+                    **entry,
+                    "when": report.when,
+                    "execution_count": (meta or {}).get("execution_count"),
+                }
             )
             return
 
@@ -141,6 +158,7 @@ class QualflarePlugin:
                 reruns=self._reruns.get(nodeid, []),
                 meta=self._meta.get(nodeid, {}),
                 replay=replay,
+                output_dir=Path(self.config.output_dir),
             )
             if case is not None:
                 cases_by_file.setdefault(rel, []).append(case)
@@ -175,6 +193,13 @@ class QualflarePlugin:
             branch=self.config.branch,
             commit=self.config.commit,
             milestone=self.config.milestone,
+            # Detected in ci_detect and previously computed then discarded: every
+            # CI report silently lost its build number, run URL and PR number.
+            ci_provider=self.config.ci_provider,
+            ci_build_number=self.config.ci_build_number,
+            ci_run_url=self.config.ci_run_url,
+            ci_pr_number=self.config.ci_pr_number,
+            properties=self.config.properties,
         )
 
         try:

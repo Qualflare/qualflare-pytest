@@ -8,10 +8,18 @@ a step is open belongs to that step rather than to the case.
 from __future__ import annotations
 
 import base64
+import shutil
+import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from .constants import MAX_PARAMETERS_PER_STEP, MAX_STEPS_PER_TEST_ATTEMPT
+from .constants import (
+    MAX_ATTACHMENT_INLINE_CHARS,
+    MAX_PARAMETERS_PER_STEP,
+    MAX_STEPS_PER_TEST_ATTEMPT,
+)
+from .log import warn
 from .wire import Attachment, Label, Link, Parameter, Step
 
 _PRIORITIES = {"low", "medium", "high", "critical"}
@@ -29,7 +37,7 @@ class Replayed:
     priority: str | None = None
 
 
-def replay(messages: list[dict[str, Any]]) -> Replayed:
+def replay(messages: list[dict[str, Any]], output_dir: Path | None = None) -> Replayed:
     out = Replayed()
     open_steps: list[int] = []
     dropped_steps = False
@@ -70,8 +78,9 @@ def replay(messages: list[dict[str, Any]]) -> Replayed:
             )
             if param.value is not None:
                 param.value = str(param.value)
-            if open_steps:
-                step = out.steps[open_steps[-1]]
+            target = next((i for i in reversed(open_steps) if i >= 0), None)
+            if target is not None:
+                step = out.steps[target]
                 if len(step.parameters) < MAX_PARAMETERS_PER_STEP:
                     step.parameters.append(param)
             else:
@@ -80,24 +89,36 @@ def replay(messages: list[dict[str, Any]]) -> Replayed:
         elif kind == "step_start":
             if len(out.steps) >= MAX_STEPS_PER_TEST_ATTEMPT:
                 dropped_steps = True
+                # A sentinel, NOT a bare `continue`. The dropped step's matching
+                # step_stop still arrives, and without something to pop it would
+                # close whichever step is legitimately open -- overwriting that
+                # step's status and duration, and then discarding its real stop
+                # because the stack is empty. Measured: an outer step wrapping a
+                # 50ms sleep reported 0.000ms once the cap was crossed.
+                open_steps.append(-1)
                 continue
             step = Step(name=message.get("name") or "step", status="passed", duration=0)
-            if open_steps:
-                step.parent_index = open_steps[-1]
+            parent = next((i for i in reversed(open_steps) if i >= 0), None)
+            if parent is not None:
+                step.parent_index = parent
             out.steps.append(step)
             open_steps.append(len(out.steps) - 1)
 
         elif kind == "step_stop":
             if not open_steps:
                 continue
-            step = out.steps[open_steps.pop()]
+            index = open_steps.pop()
+            if index < 0:
+                # The sentinel for a step dropped at the cap: consumed, ignored.
+                continue
+            step = out.steps[index]
             step.status = message.get("status") or "passed"
             step.duration = int(message.get("duration") or 0)
             if message.get("error"):
                 step.error = message["error"]
 
         elif kind in ("attachment", "attachment_from_file"):
-            out.attachments.append(_attachment(message))
+            out.attachments.append(_attachment(message, output_dir))
 
     if dropped_steps:
         from .log import warn
@@ -108,13 +129,52 @@ def replay(messages: list[dict[str, Any]]) -> Replayed:
     return out
 
 
-def _attachment(message: dict[str, Any]) -> Attachment:
+def _attachment(message: dict[str, Any], output_dir: Path | None) -> Attachment:
     name = message.get("name") or "attachment"
     mime = message.get("mimeType")
+
     if message.get("kind") == "attachment_from_file":
-        # Only the path travelled; the plugin resolves it against the report.
-        return Attachment(name=name, mime_type=mime, local_image_path=message.get("path"))
+        return _from_file(name, str(message.get("path") or ""), mime, output_dir)
+
     content = message.get("content") or ""
     if message.get("encoding") != "base64":
         content = base64.b64encode(str(content).encode("utf-8")).decode("ascii")
+    if len(content) > MAX_ATTACHMENT_INLINE_CHARS:
+        # Dropped rather than truncated: half a base64 payload is not a usable
+        # file, and an oversized body is rejected whole, losing the entire launch
+        # rather than this one attachment.
+        warn(
+            f'skipping attachment "{name}": {len(content)} encoded bytes exceeds the '
+            f"{MAX_ATTACHMENT_INLINE_CHARS} inline cap."
+        )
+        return Attachment(name=name, mime_type=mime)
     return Attachment(name=name, mime_type=mime, content=content)
+
+
+def _from_file(
+    name: str, source: str, mime: str | None, output_dir: Path | None
+) -> Attachment:
+    """Copies the file into `outputDir` and references it RELATIVELY.
+
+    `localImagePath` is defined as a filename relative to `outputDir`, which is
+    the directory the CLI uploads. Passing the user's own path through -- which
+    this used to do -- produced an absolute path the CLI could not resolve, so the
+    server stored the attachment from its name alone as an undownloadable
+    placeholder, and the report leaked the CI agent's directory layout.
+    """
+    src = Path(source)
+    if output_dir is None or not src.is_file():
+        warn(f'skipping attachment "{name}": {source} is not a readable file.')
+        return Attachment(name=name, mime_type=mime)
+    try:
+        size = src.stat().st_size
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # A uuid prefix so two tests attaching "screenshot.png" cannot collide.
+        target_name = f"{uuid.uuid4().hex}-{src.name}"
+        shutil.copyfile(src, output_dir / target_name)
+    except OSError as err:
+        warn(f'skipping attachment "{name}": could not copy {source}: {err}')
+        return Attachment(name=name, mime_type=mime)
+    return Attachment(
+        name=name, mime_type=mime, local_image_path=target_name, file_size=size
+    )

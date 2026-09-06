@@ -2,7 +2,6 @@
 
 [![PyPI](https://img.shields.io/pypi/v/qualflare-pytest.svg)](https://pypi.org/project/qualflare-pytest/)
 [![CI](https://github.com/Qualflare/qualflare-pytest/actions/workflows/ci.yml/badge.svg)](https://github.com/Qualflare/qualflare-pytest/actions/workflows/ci.yml)
-[![Qualflare](https://api.qualflare.com/p/qualflare-pytest/badge.svg)](https://reports.qualflare.com/p/qualflare-pytest/launches)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 
 A native pytest plugin for [Qualflare](https://qualflare.com) — captures results
@@ -44,8 +43,8 @@ qualflare_environment = staging
 qualflare_output_dir = qualflare-results
 ```
 
-Every option and environment variable is in
-[`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md).
+Every option is also settable as `QUALFLARE_<NAME>` in the environment; the ini
+option wins where both are set.
 
 ## Parallel runs
 
@@ -77,22 +76,6 @@ def test_checks_out():
 Markers become tags automatically, so a suite already using `@pytest.mark.smoke`
 for selection gets that dimension in Qualflare with no code change.
 
-Full reference in [`docs/METADATA-API.md`](./docs/METADATA-API.md).
-
-## Test reports
-
-This plugin is tested with itself. `e2e/` is a pytest suite covering this
-package's own behaviour — the metadata API, steps, retry history and attachments —
-run by this plugin and uploaded to Qualflare on every merge to `main`, using the
-**published** `qualflare-cli`. The results below are that suite's, reported
-through the code this README documents:
-
-[![Qualflare](https://api.qualflare.com/p/qualflare-pytest/banner.svg)](https://reports.qualflare.com/p/qualflare-pytest/launches)
-
-Every case there is meant to pass, so a red run is a real regression rather than a
-fixture failing on purpose. Deliberately-failing cases live in `tests/`, which is
-never uploaded.
-
 ## Known limitations
 
 - **A masked parameter's value is dropped at the source**, so it never reaches the
@@ -100,9 +83,7 @@ never uploaded.
   protect it.
 - **Values passed to `qualflare.parameter()` must be JSON-safe.** Anything else is
   coerced to its `repr` rather than risking the run — see
-  [`docs/LIMITATIONS.md`](./docs/LIMITATIONS.md) for why that matters under xdist.
-
-Full details in [`docs/LIMITATIONS.md`](./docs/LIMITATIONS.md).
+  below for why that matters under xdist.
 
 ## License
 

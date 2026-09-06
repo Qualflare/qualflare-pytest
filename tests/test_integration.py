@@ -184,3 +184,185 @@ def test_shard_index_only_under_xdist(pytester, read_report, cases):
     # PYTEST_XDIST_WORKER is readable only in the worker, so a populated value
     # proves it travelled with the metadata.
     assert any(isinstance(c.get("shardIndex"), int) for c in parallel)
+
+
+# --------------------------------------------------------------------------
+# Regressions from the self-review. Every one of these was a real defect that
+# produced a WRONG report rather than an error, and none was caught by the
+# original suite.
+# --------------------------------------------------------------------------
+
+RETRY_METADATA_SUITE = '''
+import time, os, pytest
+from qualflare_pytest import qualflare
+
+_n = {"c": 0}
+
+@pytest.mark.flaky(reruns=2)
+def test_metadata_across_retries():
+    qualflare.label("team", "platform")
+    qualflare.tag("smoke")
+    with qualflare.step("a step"):
+        pass
+    _n["c"] += 1
+    if _n["c"] < 3:
+        raise AssertionError("retry me")
+
+def test_outer_step_keeps_its_own_timing():
+    with qualflare.step("OUTER"):
+        for i in range(320):
+            with qualflare.step(f"child-{i}"):
+                pass
+        time.sleep(0.05)
+
+def test_attaches_a_file():
+    open("shot.png", "wb").write(b"PNGDATA")
+    qualflare.attachment_from_file("screenshot", os.path.abspath("shot.png"), mime_type="image/png")
+
+def test_oversized_inline_attachment_is_skipped():
+    qualflare.attachment("huge", "x" * 3_000_000)
+'''
+
+
+def _run_suite(pytester, source, *extra):
+    pytester.makepyfile(test_regress=source)
+    out = pytester.path / "out"
+    old = os.environ.get("QUALFLARE_OUTPUT_DIR")
+    os.environ["QUALFLARE_OUTPUT_DIR"] = str(out)
+    try:
+        pytester.runpytest_subprocess("-p", "no:cacheprovider", *extra)
+    finally:
+        if old is None:
+            os.environ.pop("QUALFLARE_OUTPUT_DIR", None)
+        else:
+            os.environ["QUALFLARE_OUTPUT_DIR"] = old
+    return out
+
+
+def test_metadata_is_not_duplicated_across_retries(pytester, read_report, cases):
+    """pytest-rerunfailures loops INSIDE one pytest_runtest_protocol call, so a
+    shared metadata bucket accumulates every attempt's messages. It produced
+    three copies of each label, tag and step on a reruns=2 test."""
+    report = read_report(_run_suite(pytester, RETRY_METADATA_SUITE))
+    c = {x["name"]: x for x in cases(report)}["test_metadata_across_retries"]
+
+    assert len(c["labels"]) == 1, c["labels"]
+    assert c["tags"].count("smoke") == 1
+    assert len([s for s in c["steps"] if s["name"] == "a step"]) == 1
+    # The retry history itself must still be complete.
+    assert len(c["attempts"]) == 3
+
+
+def test_step_dropped_at_the_cap_does_not_close_an_open_parent(pytester, read_report, cases):
+    """A dropped step_start still gets a step_stop. Without a sentinel it popped
+    whichever step was legitimately open, overwriting its status and duration and
+    then discarding its real stop event."""
+    report = read_report(_run_suite(pytester, RETRY_METADATA_SUITE))
+    c = {x["name"]: x for x in cases(report)}["test_outer_step_keeps_its_own_timing"]
+    outer = next(s for s in c["steps"] if s["name"] == "OUTER")
+
+    # OUTER wraps a 50ms sleep; before the fix it reported 0.000ms because a
+    # dropped child's stop closed it.
+    assert outer["duration"] >= 50_000_000, f"outer lost its own timing: {outer['duration']}ns"
+
+
+def test_attachment_from_file_is_copied_and_referenced_relatively(pytester, read_report, cases):
+    """`localImagePath` is defined as relative to outputDir. Passing the user's
+    own path through made it unresolvable for the CLI — the server stored an
+    undownloadable placeholder — and leaked the agent's directory layout."""
+    out = _run_suite(pytester, RETRY_METADATA_SUITE)
+    report = read_report(out)
+    c = {x["name"]: x for x in cases(report)}["test_attaches_a_file"]
+    att = c["attachments"][0]
+
+    path = att["localImagePath"]
+    assert not os.path.isabs(path), path
+    assert (out / path).is_file(), "the file must be copied INTO outputDir"
+    assert att["fileSize"] == len(b"PNGDATA")
+
+
+def test_oversized_inline_attachment_is_dropped_not_truncated(pytester, read_report, cases):
+    """A rejected /collect body loses the whole launch, not one attachment. Half a
+    base64 payload is not a usable file, so it is dropped rather than truncated."""
+    report = read_report(_run_suite(pytester, RETRY_METADATA_SUITE))
+    c = {x["name"]: x for x in cases(report)}["test_oversized_inline_attachment_is_skipped"]
+
+    assert c["status"] == "passed", "an oversized attachment must never fail the test"
+    assert "content" not in c["attachments"][0]
+
+
+FIXTURE_RETRY_SUITE = '''
+import pytest
+
+_s = {"c": 0}
+
+@pytest.fixture
+def flaky_fixture():
+    _s["c"] += 1
+    if _s["c"] < 3:
+        raise RuntimeError(f"fixture boom {_s['c']}")
+    return True
+
+@pytest.mark.flaky(reruns=2)
+def test_flaky_fixture_recovers(flaky_fixture):
+    assert flaky_fixture
+
+@pytest.fixture
+def always_broken():
+    raise RuntimeError("permanently broken fixture")
+
+@pytest.mark.flaky(reruns=1)
+def test_fixture_never_recovers(always_broken):
+    assert True
+'''
+
+
+def test_setup_triggered_retries_are_errors_not_failures(pytester, read_report, cases):
+    """rerunfailures retries setup failures too. Hardcoding every attempt as
+    "failed" blamed the test body for a flaky fixture, contradicting the rule the
+    plugin applies to the final outcome."""
+    report = read_report(_run_suite(pytester, FIXTURE_RETRY_SUITE))
+    c = {x["name"]: x for x in cases(report)}["test_flaky_fixture_recovers"]
+
+    assert [a["status"] for a in c["attempts"]] == ["error", "error", "passed"]
+    assert c["status"] == "passed"
+
+
+def test_terminal_attempt_keeps_its_message_when_the_status_is_error(
+    pytester, read_report, cases
+):
+    """The terminal attempt is the entry explaining why the retries ran out.
+    Testing only for "failed" shipped it blank whenever a fixture kept failing."""
+    report = read_report(_run_suite(pytester, FIXTURE_RETRY_SUITE))
+    c = {x["name"]: x for x in cases(report)}["test_fixture_never_recovers"]
+
+    assert c["status"] == "error"
+    assert "permanently broken fixture" in c["attempts"][-1]["message"]
+
+
+def test_ci_metadata_reaches_the_report(pytester, read_report):
+    """ci_detect computed provider, build number, run URL and PR number, and
+    resolve_config never read them — so every CI report dropped them silently."""
+    ci = {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_REPOSITORY": "Qualflare/qualflare-pytest",
+        "GITHUB_RUN_ID": "42",
+        "GITHUB_RUN_NUMBER": "7",
+        "GITHUB_SHA": "abc123",
+        "GITHUB_REF_NAME": "main",
+    }
+    old = {k: os.environ.get(k) for k in ci}
+    os.environ.update(ci)
+    try:
+        report = read_report(_run_suite(pytester, "def test_ok(): pass\n"))
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    assert report["ciProvider"] == "github"
+    assert report["ciBuildNumber"] == "7"
+    assert report["ciRunUrl"].endswith("/actions/runs/42")
+    assert report["commit"] == "abc123"

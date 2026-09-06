@@ -33,8 +33,11 @@ class ReporterConfig:
     commit: str | None = None
     run_id: str = ""
     enabled: bool = True
-    debug: bool = False
     properties: dict[str, str] = field(default_factory=dict)
+    ci_provider: str | None = None
+    ci_build_number: str | None = None
+    ci_run_url: str | None = None
+    ci_pr_number: int | None = None
 
 
 def _ini(config: Any, name: str) -> str | None:
@@ -112,5 +115,9 @@ def resolve_config(pytest_config: Any) -> ReporterConfig:
         enabled=_as_bool(
             _ini(pytest_config, "qualflare_enabled") or _env("QUALFLARE_ENABLED"), True
         ),
-        debug=_as_bool(_env("QUALFLARE_DEBUG", "QF_DEBUG"), False),
+        # Detected above and previously dropped on the floor.
+        ci_provider=ci.provider,
+        ci_build_number=ci.build_number,
+        ci_run_url=ci.run_url,
+        ci_pr_number=ci.pr_number,
     )

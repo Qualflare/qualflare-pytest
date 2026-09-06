@@ -74,6 +74,7 @@ def build_case(
     reruns: list[dict[str, Any]],
     meta: dict[str, Any],
     replay: Any,
+    output_dir: Any = None,
 ) -> Case | None:
     phase, status = outcome_of(phases)
     deciding = phases.get(phase) or {}
@@ -89,7 +90,7 @@ def build_case(
         error = truncate(trace or message, MAX_CASE_ERROR_RUNES)
 
     name = nodeid.split("::", 1)[1] if "::" in nodeid else nodeid
-    replayed = replay(meta.get("messages") or [])
+    replayed = replay(meta.get("messages") or [], output_dir)
 
     properties: dict[str, str] = {"file": file_path}
     for param in replayed.case_parameters:

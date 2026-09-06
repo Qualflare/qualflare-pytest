@@ -77,10 +77,14 @@ def build_attempts(
     out: list[Attempt] = []
     for index, rerun in enumerate(reruns, start=1):
         message, trace = describe_failure(rerun.get("longrepr"))
+        # A retry triggered by a failing FIXTURE is not the test body failing.
+        # rerunfailures retries setup failures too, so the phase decides the
+        # status -- the same rule map_status applies to the final outcome.
+        phase = rerun.get("when") or "call"
         out.append(
             Attempt(
                 attempt=int(rerun.get("execution_count") or index),
-                status="failed",
+                status="error" if phase in ("setup", "teardown") else "failed",
                 duration=rerun.get("duration_ns"),
                 message=message,
                 trace=trace,
@@ -88,7 +92,10 @@ def build_attempts(
         )
 
     terminal = Attempt(attempt=out[-1].attempt + 1, status=final_status, duration=final_duration_ns)
-    if final_status == "failed":
+    # "error" as well as "failed": a fixture that keeps failing across every retry
+    # ends as `error`, and the terminal attempt is the one entry that explains why
+    # the retries were exhausted. Testing only for "failed" shipped it blank.
+    if final_status in ("failed", "error"):
         terminal.message, terminal.trace = describe_failure(final_longrepr)
     out.append(terminal)
 
