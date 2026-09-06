@@ -10,3 +10,4 @@ build/
 qualflare-results/
 e2e-results/
 .DS_Store
+e2e/e2e-results/

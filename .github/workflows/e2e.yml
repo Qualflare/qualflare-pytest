@@ -1,0 +1,80 @@
+# Dogfood: qualflare-pytest reports on a suite of itself, and the PUBLISHED CLI
+# uploads the result to Qualflare.
+#
+# Why this exists: every other suite in this repo stops at the report file on
+# disk, so nothing exercises the plugin/CLI pairing. In the sibling packages that
+# seam broke twice -- `Case.attempts` was silently discarded by the CLI's parser
+# for three releases, and `localImagePath` needed a CLI floor nothing enforced.
+# Both would have shown up here on day one.
+#
+# The CLI is deliberately UNPINNED. A CLI release that stops understanding what
+# this plugin emits should turn this red; that is the whole point.
+#
+# The suite contains NO failing tests by construction. Status mapping for
+# failures stays the job of tests/ -- please do not "helpfully" add a failing
+# test here.
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  # NOT cancel-in-progress. Every push to main should produce its own launch;
+  # cancelling would silently drop commits out of the Qualflare trend line, which
+  # is the one thing this workflow exists to provide.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Dogfood and upload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Install the plugin and its optional companions
+        run: pip install -e . pytest-xdist pytest-rerunfailures pytest-bdd
+
+      - name: Run the dogfood suite
+        working-directory: e2e
+        # The suite is all-passing by construction, so a non-zero exit here is a
+        # real regression rather than an expected failure to tolerate.
+        run: python -m pytest -q
+
+      - name: Verify the report before uploading it
+        working-directory: e2e
+        # A report can be structurally valid and semantically wrong. Checking it
+        # here means a bad payload fails loudly instead of being discovered in the
+        # UI weeks later.
+        run: python verify_report.py
+
+      - name: Install the published CLI
+        # Unpinned on purpose — see the header.
+        run: |
+          npm install -g @qualflare/cli
+          qf version
+
+      - name: Upload to Qualflare
+        working-directory: e2e
+        env:
+          # Passed through the environment, NOT argv, so it never lands in the
+          # process list of a shared runner.
+          QF_TOKEN: ${{ secrets.QF_TOKEN }}
+        run: |
+          if [ -z "$QF_TOKEN" ]; then
+            echo "::error::QF_TOKEN is not set on this repository."
+            exit 1
+          fi
+          qf login qualflare-pytest --force
+          qf qualflare-pytest collect ./e2e-results
