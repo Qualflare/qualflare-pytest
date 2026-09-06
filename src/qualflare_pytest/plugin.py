@@ -25,6 +25,7 @@ from typing import Any
 
 import pytest
 
+from .bdd import BDDHooks, bdd_is_available
 from .case_builder import build_case
 from .config import ReporterConfig, resolve_config
 from .constants import MAX_CASES_PER_SUITE, MAX_SUITES_PER_LAUNCH, USER_PROPERTY_KEY
@@ -266,3 +267,8 @@ def _relativize(path: str, rootdir: Path) -> str:
 
 def pytest_configure(config: Any) -> None:
     config.pluginmanager.register(QualflarePlugin(config), "qualflare-pytest-plugin")
+    # Conditional, because pytest rejects unknown `pytest_bdd_*` hook names when
+    # pytest-bdd is not installed -- registering unconditionally would break every
+    # run that does not use BDD.
+    if bdd_is_available():
+        config.pluginmanager.register(BDDHooks(), "qualflare-pytest-bdd")

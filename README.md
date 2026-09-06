@@ -43,8 +43,8 @@ qualflare_environment = staging
 qualflare_output_dir = qualflare-results
 ```
 
-Every option is also settable as `QUALFLARE_<NAME>` in the environment; the ini
-option wins where both are set.
+Every option and environment variable is in
+[`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md).
 
 ## Parallel runs
 
@@ -74,16 +74,22 @@ def test_checks_out():
 ```
 
 Markers become tags automatically, so a suite already using `@pytest.mark.smoke`
-for selection gets that dimension in Qualflare with no code change.
+for selection gets that dimension in Qualflare with no code change. When
+`pytest-bdd` is installed, Gherkin steps are recorded with their keyword and
+location too.
+
+Full reference in [`docs/METADATA-API.md`](./docs/METADATA-API.md).
 
 ## Known limitations
 
-- **A masked parameter's value is dropped at the source**, so it never reaches the
-  report — the wire format treats `masked` as a display hint only, which would not
-  protect it.
-- **Values passed to `qualflare.parameter()` must be JSON-safe.** Anything else is
-  coerced to its `repr` rather than risking the run — see
-  below for why that matters under xdist.
+- **`xfail` and `xpass` are flattened** to `skipped` and `passed`. Under
+  `xfail(strict=True)` an unexpected pass is a failure in pytest but reads as an
+  ordinary pass here.
+- **`record_property` is ignored.** Use `qualflare.parameter()` or
+  `qualflare.label()`, which do reach the report.
+- **Captured stdout/stderr are not attached.** Attach what you need explicitly.
+
+Full details in [`docs/LIMITATIONS.md`](./docs/LIMITATIONS.md).
 
 ## License
 

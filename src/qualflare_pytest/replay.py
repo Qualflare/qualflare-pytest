@@ -97,7 +97,13 @@ def replay(messages: list[dict[str, Any]], output_dir: Path | None = None) -> Re
                 # 50ms sleep reported 0.000ms once the cap was crossed.
                 open_steps.append(-1)
                 continue
-            step = Step(name=message.get("name") or "step", status="passed", duration=0)
+            step = Step(
+                name=message.get("name") or "step",
+                status="passed",
+                duration=0,
+                keyword=message.get("keyword"),
+                location=message.get("location"),
+            )
             parent = next((i for i in reversed(open_steps) if i >= 0), None)
             if parent is not None:
                 step.parent_index = parent
