@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint, typecheck, unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: mypy
+      - run: pytest tests/ -q
+
+  matrix:
+    name: pytest ${{ matrix.pytest }} / py ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        # Validates the declared floors empirically rather than by assertion. The
+        # 3.9 + pytest 7 leg is the load-bearing one: it is what the metadata
+        # says is supported, and a floor nobody runs is a floor that is broken.
+        include:
+          - python: '3.9'
+            pytest: '7.4.4'
+          - python: '3.11'
+            pytest: '8.3.4'
+          - python: '3.13'
+            pytest: ''      # latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install with the matrix pytest
+        run: |
+          pip install -e .
+          if [ -n "${{ matrix.pytest }}" ]; then
+            pip install "pytest==${{ matrix.pytest }}"
+          fi
+          pip install pytest-xdist pytest-rerunfailures
+      - name: Confirm the matrix version is the one installed
+        # Cheap, and it catches a resolution that quietly ignored the pin —
+        # otherwise three green legs could all be testing the same version.
+        run: |
+          INSTALLED="$(python -c 'import pytest; print(pytest.__version__)')"
+          echo "installed pytest: $INSTALLED (matrix asked for '${{ matrix.pytest }}')"
+          if [ -n "${{ matrix.pytest }}" ] && [ "$INSTALLED" != "${{ matrix.pytest }}" ]; then
+            echo "::error::pytest $INSTALLED installed, expected ${{ matrix.pytest }}"; exit 1
+          fi
+      - run: pytest tests/ -q
+
+  optional-deps-absent:
+    name: Works without xdist and rerunfailures
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # Both are OPTIONAL. The plugin must not merely tolerate their absence, it
+      # must produce a correct report — so this leg installs neither and runs the
+      # subset of the suite that does not require them.
+      - run: pip install -e . && pip install pytest
+      - run: |
+          python -c "
+          import subprocess, sys, json, os, glob, tempfile, textwrap
+          d = tempfile.mkdtemp()
+          open(os.path.join(d, 'test_x.py'), 'w').write(textwrap.dedent('''
+              from qualflare_pytest import qualflare
+              def test_ok():
+                  qualflare.label('team', 'platform')
+              def test_bad():
+                  raise AssertionError('nope')
+          '''))
+          env = dict(os.environ, QUALFLARE_OUTPUT_DIR=os.path.join(d, 'out'))
+          subprocess.run([sys.executable, '-m', 'pytest', '-q', d], env=env, cwd=d)
+          files = glob.glob(os.path.join(d, 'out', '*.json'))
+          assert len(files) == 1, files
+          report = json.load(open(files[0]))
+          cases = [c for s in report['suites'] for c in s['cases']]
+          assert len(cases) == 2, cases
+          assert any(c['status'] == 'failed' for c in cases)
+          assert not any(c.get('attempts') for c in cases), 'no rerunfailures => no attempts'
+          print('ok: correct report with neither optional plugin installed')
+          "
+
+  no-network:
+    name: Plugin makes no network calls
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: |
+          if grep -rnE "\b(requests|urllib3|httpx|http\.client|urllib\.request|socket)\b" src/qualflare_pytest/; then
+            echo "::error::the plugin must make no network calls"; exit 1
+          fi
+          echo "ok: no HTTP client imported"

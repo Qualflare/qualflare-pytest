@@ -8,21 +8,20 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class CIInfo:
-    provider: Optional[str] = None
-    build_number: Optional[str] = None
-    run_url: Optional[str] = None
-    pr_number: Optional[int] = None
-    branch: Optional[str] = None
-    commit: Optional[str] = None
-    run_id: Optional[str] = None
+    provider: str | None = None
+    build_number: str | None = None
+    run_url: str | None = None
+    pr_number: int | None = None
+    branch: str | None = None
+    commit: str | None = None
+    run_id: str | None = None
 
 
-def _int_or_none(raw: Optional[str]) -> Optional[int]:
+def _int_or_none(raw: str | None) -> int | None:
     try:
         return int(raw) if raw else None
     except ValueError:

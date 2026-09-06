@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from .constants import MAX_PARAMETERS_PER_STEP, MAX_STEPS_PER_TEST_ATTEMPT
 from .wire import Attachment, Label, Link, Parameter, Step
@@ -25,8 +25,8 @@ class Replayed:
     steps: list[Step] = field(default_factory=list)
     attachments: list[Attachment] = field(default_factory=list)
     case_parameters: list[Parameter] = field(default_factory=list)
-    description: Optional[str] = None
-    priority: Optional[str] = None
+    description: str | None = None
+    priority: str | None = None
 
 
 def replay(messages: list[dict[str, Any]]) -> Replayed:
@@ -42,7 +42,11 @@ def replay(messages: list[dict[str, Any]]) -> Replayed:
 
         elif kind == "link":
             out.links.append(
-                Link(url=message["url"], type=message.get("type") or "custom", name=message.get("name"))
+                Link(
+                    url=message["url"],
+                    type=message.get("type") or "custom",
+                    name=message.get("name"),
+                )
             )
 
         elif kind == "tag":

@@ -21,7 +21,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -190,14 +190,14 @@ class QualflarePlugin:
 # -- helpers ---------------------------------------------------------------
 
 
-def _extract_meta(report: Any) -> Optional[dict[str, Any]]:
+def _extract_meta(report: Any) -> dict[str, Any] | None:
     for key, value in getattr(report, "user_properties", []):
         if key == USER_PROPERTY_KEY and isinstance(value, dict):
             return value
     return None
 
 
-def _class_name(item: Any) -> Optional[str]:
+def _class_name(item: Any) -> str | None:
     cls = getattr(item, "cls", None)
     return cls.__name__ if cls is not None else None
 
@@ -216,7 +216,7 @@ def _marker_tags(item: Any) -> list[str]:
         return []
 
 
-def _shard_index() -> Optional[int]:
+def _shard_index() -> int | None:
     """The xdist worker index, read where it is actually available.
 
     `PYTEST_XDIST_WORKER` is "gw0", "gw1", ... in a worker and unset on the

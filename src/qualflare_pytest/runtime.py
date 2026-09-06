@@ -27,14 +27,14 @@ somebody's test run.
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 from .constants import USER_PROPERTY_KEY
 
 # Set by the plugin for the duration of each test. Module state is safe here in a
 # way it was not for the JS packages: pytest runs one test at a time per process,
 # and the runtime and the plugin are the same import in the same interpreter.
-_current: Optional[dict[str, Any]] = None
+_current: dict[str, Any] | None = None
 _open_steps: list[int] = []
 
 
@@ -84,7 +84,7 @@ class _Qualflare:
         """Allure-style name/value metadata (epic, feature, story, owner, ...)."""
         _emit("label", {"name": str(name), "value": str(value)})
 
-    def link(self, url: str, type: str = "custom", name: Optional[str] = None) -> None:
+    def link(self, url: str, type: str = "custom", name: str | None = None) -> None:
         """An external link. `type` is issue/tms/custom; unknown values are
         rejected server-side rather than rewritten, so it is passed through."""
         _emit("link", {"url": str(url), "type": str(type), "name": name})
@@ -113,7 +113,7 @@ class _Qualflare:
         )
 
     def attachment(
-        self, name: str, content: str, mime_type: Optional[str] = None, encoding: str = "utf8"
+        self, name: str, content: str, mime_type: str | None = None, encoding: str = "utf8"
     ) -> None:
         """Attaches in-memory content. Images are offloaded to `outputDir` by the
         plugin, which owns that directory."""
@@ -123,12 +123,12 @@ class _Qualflare:
         )
 
     def attachment_from_file(
-        self, name: str, path: str, mime_type: Optional[str] = None
+        self, name: str, path: str, mime_type: str | None = None
     ) -> None:
         """Attaches a file by path. Only the path travels; the plugin reads it."""
         _emit("attachment_from_file", {"name": str(name), "path": str(path), "mimeType": mime_type})
 
-    def step(self, name: str) -> "_Step":
+    def step(self, name: str) -> _Step:
         """Records a named step. Use as a context manager:
 
             with qualflare.step("add to cart"):
@@ -145,12 +145,12 @@ class _Step:
         self._name = name
         self._started = 0.0
 
-    def __enter__(self) -> "_Step":
+    def __enter__(self) -> _Step:
         self._started = time.perf_counter()
         _emit("step_start", {"name": self._name})
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         duration_ns = int((time.perf_counter() - self._started) * 1_000_000_000)
         _emit(
             "step_stop",
@@ -160,7 +160,8 @@ class _Step:
                 "duration": duration_ns,
             },
         )
-        return False  # never suppress
+        # Returns None, never True: this must never suppress the test's own
+        # exception. Typing it as bool would tell callers it might.
 
 
 qualflare = _Qualflare()

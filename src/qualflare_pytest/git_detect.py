@@ -9,16 +9,15 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class GitInfo:
-    branch: Optional[str] = None
-    commit: Optional[str] = None
+    branch: str | None = None
+    commit: str | None = None
 
 
-def _run(args: list[str]) -> Optional[str]:
+def _run(args: list[str]) -> str | None:
     try:
         out = subprocess.run(
             args, capture_output=True, text=True, timeout=5, check=False

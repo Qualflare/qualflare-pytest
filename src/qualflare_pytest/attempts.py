@@ -16,7 +16,7 @@ rerunfailures is an OPTIONAL dependency. Without it no report ever has outcome
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from .constants import (
     MAX_ATTEMPT_MESSAGE_RUNES,
@@ -27,7 +27,7 @@ from .text import truncate
 from .wire import Attempt
 
 
-def describe_failure(longrepr: Any) -> tuple[Optional[str], Optional[str]]:
+def describe_failure(longrepr: Any) -> tuple[str | None, str | None]:
     """Extracts (message, trace) from a report's longrepr.
 
     longrepr has three shapes in practice: a rich ExceptionRepr for a failure, a
@@ -41,10 +41,26 @@ def describe_failure(longrepr: Any) -> tuple[Optional[str], Optional[str]]:
     text = str(longrepr)
     if not text:
         return None, None
-    # The last line of a pytest traceback is the assertion line; the whole thing
-    # is the trace.
-    last = text.strip().splitlines()[-1] if text.strip() else text
-    return truncate(last, MAX_ATTEMPT_MESSAGE_RUNES), truncate(text, MAX_ATTEMPT_TRACE_RUNES)
+
+    # `reprcrash.message` is pytest's own one-line summary of the failure --
+    # "AssertionError: boom attempt 1". Deriving it from the rendered traceback
+    # instead is wrong: that text ENDS with the location line
+    # ("test_suite.py:11: AssertionError"), so taking the last line yields a file
+    # reference where the reader expects the assertion.
+    crash = getattr(longrepr, "reprcrash", None)
+    message = getattr(crash, "message", None)
+    if not message:
+        # No reprcrash (a plain string longrepr, or a custom repr): fall back to
+        # the first line that carries pytest's "E   " error marker, then to the
+        # first line of all.
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        marked = [ln.strip()[1:].strip() for ln in lines if ln.lstrip().startswith("E ")]
+        message = marked[0] if marked else (lines[0] if lines else text)
+
+    return (
+        truncate(str(message), MAX_ATTEMPT_MESSAGE_RUNES),
+        truncate(text, MAX_ATTEMPT_TRACE_RUNES),
+    )
 
 
 def build_attempts(

@@ -17,7 +17,7 @@ Three rules are easy to get wrong writing this fresh, and all three are load-bea
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 def _clean(d: dict[str, Any]) -> dict[str, Any]:
@@ -32,7 +32,7 @@ def _clean(d: dict[str, Any]) -> dict[str, Any]:
 @dataclass
 class Parameter:
     name: str
-    value: Optional[str] = None
+    value: str | None = None
     masked: bool = False
 
     def to_wire(self) -> dict[str, Any]:
@@ -49,10 +49,10 @@ class Step:
     name: str
     status: str
     duration: int  # nanoseconds
-    keyword: Optional[str] = None
-    error: Optional[str] = None
-    location: Optional[str] = None
-    parent_index: Optional[int] = None
+    keyword: str | None = None
+    error: str | None = None
+    location: str | None = None
+    parent_index: int | None = None
     parameters: list[Parameter] = field(default_factory=list)
 
     def to_wire(self) -> dict[str, Any]:
@@ -73,11 +73,11 @@ class Step:
 @dataclass
 class Attachment:
     name: str
-    mime_type: Optional[str] = None
-    content: Optional[str] = None          # base64
-    local_image_path: Optional[str] = None  # relative to outputDir
-    file_size: Optional[int] = None
-    step_index: Optional[int] = None
+    mime_type: str | None = None
+    content: str | None = None          # base64
+    local_image_path: str | None = None  # relative to outputDir
+    file_size: int | None = None
+    step_index: int | None = None
 
     def to_wire(self) -> dict[str, Any]:
         return _clean({
@@ -94,9 +94,9 @@ class Attachment:
 class Attempt:
     attempt: int  # 1-based; the server drops anything lower
     status: str
-    duration: Optional[int] = None  # nanoseconds
-    message: Optional[str] = None
-    trace: Optional[str] = None
+    duration: int | None = None  # nanoseconds
+    message: str | None = None
+    trace: str | None = None
 
     def to_wire(self) -> dict[str, Any]:
         return _clean({
@@ -121,7 +121,7 @@ class Label:
 class Link:
     url: str
     type: str = "custom"  # issue | tms | custom
-    name: Optional[str] = None
+    name: str | None = None
 
     def to_wire(self) -> dict[str, Any]:
         return _clean({"url": self.url, "type": self.type, "name": self.name})
@@ -133,14 +133,14 @@ class Case:
     name: str
     status: str
     duration: int  # nanoseconds
-    class_name: Optional[str] = None
-    error: Optional[str] = None
-    description: Optional[str] = None
-    priority: Optional[str] = None
-    retry_count: Optional[int] = None
-    is_flaky: Optional[bool] = None
-    shard_index: Optional[int] = None
-    started_at: Optional[str] = None
+    class_name: str | None = None
+    error: str | None = None
+    description: str | None = None
+    priority: str | None = None
+    retry_count: int | None = None
+    is_flaky: bool | None = None
+    shard_index: int | None = None
+    started_at: str | None = None
     properties: dict[str, str] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
     labels: list[Label] = field(default_factory=list)
@@ -208,7 +208,7 @@ class Metadata:
     version: str
     timestamp: str
     cli_name: str
-    run_id: Optional[str] = None
+    run_id: str | None = None
 
     def to_wire(self) -> dict[str, Any]:
         return _clean({
@@ -231,14 +231,14 @@ class Collect:
     suites: list[Suite] = field(default_factory=list)
     # Value-or-null, ALWAYS present. The server treats an absent key differently
     # from an explicit null, so these are never dropped by `_clean`.
-    branch: Optional[str] = None
-    commit: Optional[str] = None
-    milestone: Optional[int] = None
+    branch: str | None = None
+    commit: str | None = None
+    milestone: int | None = None
     properties: dict[str, str] = field(default_factory=dict)
-    ci_provider: Optional[str] = None
-    ci_build_number: Optional[str] = None
-    ci_run_url: Optional[str] = None
-    ci_pr_number: Optional[int] = None
+    ci_provider: str | None = None
+    ci_build_number: str | None = None
+    ci_run_url: str | None = None
+    ci_pr_number: int | None = None
 
     def to_wire(self) -> dict[str, Any]:
         out: dict[str, Any] = {
