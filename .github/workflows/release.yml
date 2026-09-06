@@ -1,0 +1,71 @@
+name: Release
+
+# Publishes to PyPI using Trusted Publishing (OIDC). There is no API token: the
+# workflow requests a short-lived credential from PyPI at publish time, scoped to
+# this exact repository and workflow file. That means nothing long-lived sits in
+# repository secrets to leak.
+#
+# The trusted publisher on pypi.org must name THIS file (release.yml) and the
+# `pypi` environment below; a mismatch in either is rejected at publish time.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Publish qualflare-pytest
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      # Mandatory for Trusted Publishing — this is what mints the OIDC token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Verify the tag matches the packaged version
+        # A tag that disagrees with pyproject.toml publishes a version nobody
+        # asked for, and PyPI releases cannot be replaced.
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(python -c "
+          import tomllib, pathlib
+          print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])
+          ")"
+          echo "tag=$TAG pyproject=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag $GITHUB_REF_NAME (version $TAG) does not match pyproject.toml version $PKG"
+            exit 1
+          fi
+
+      - name: Run the full gate at the exact bytes to be published
+        run: |
+          pip install -e ".[dev]"
+          ruff check .
+          mypy
+          pytest tests/ -q
+
+      - name: Build
+        run: |
+          pip install build
+          python -m build
+
+      - name: Check the artifacts render on PyPI
+        # A malformed README is accepted by `build` and rejected by PyPI, after
+        # the version number has already been consumed.
+        run: |
+          pip install twine
+          twine check dist/*
+
+      - name: Publish
+        # No username, no password: omitting them is what selects Trusted
+        # Publishing. Adding a token here would silently fall back to it.
+        uses: pypa/gh-action-pypi-publish@release/v1
