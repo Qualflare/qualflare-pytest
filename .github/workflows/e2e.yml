@@ -65,7 +65,15 @@ jobs:
           npm install -g @qualflare/cli
           qf version
 
+      # Captured BEFORE the upload so the step after it can require the number to
+      # move. python3 is preinstalled on ubuntu-latest; the script is identical in
+      # every reporter repo so there is one implementation to fix, not seven.
+      - name: Record the project's run count before uploading
+        id: runs_before
+        run: echo "count=$(python3 e2e/assert-launch-landed.py qualflare-pytest --print)" >> "$GITHUB_OUTPUT"
+
       - name: Upload to Qualflare
+        id: upload
         working-directory: e2e
         env:
           # Passed through the environment, NOT argv, so it never lands in the
@@ -78,3 +86,11 @@ jobs:
           fi
           qf login qualflare-pytest --force
           qf qualflare-pytest collect ./e2e-results
+
+      # The upload's exit code only proves the server returned 2xx. This proves a
+      # launch reached the project the README's badge actually reads -- the two
+      # diverged for 11 consecutive green runs on qualflare-jest. Runs after the
+      # upload, so a failure here never costs us the data.
+      - name: Assert the launch reached the project the badge reads
+        if: steps.upload.outcome == 'success'
+        run: python3 e2e/assert-launch-landed.py qualflare-pytest --before "${{ steps.runs_before.outputs.count }}"
