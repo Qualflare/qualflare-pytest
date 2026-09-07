@@ -11,8 +11,10 @@ steps, attachments, and author-facing metadata (labels, links, tags, priority,
 custom parameters).
 
 Without it, pytest results reach Qualflare through `--junitxml`, which carries
-pass/fail, duration and a class name — no retry history, no attachments, no
-metadata.
+pass/fail, duration and a class name — no per-attempt history, no attachments,
+no metadata. pytest writes a retried test as repeated bare `<testcase>` elements
+with no failure text on the attempts that failed, so what each attempt did is
+absent from the file rather than merely unparsed.
 
 The plugin makes **no network calls**. It writes a report directory, and
 [`qualflare-cli`](https://github.com/Qualflare/qualflare-cli) uploads it.
@@ -31,10 +33,14 @@ optional; the plugin works, and is tested, without either.
 
 ```bash
 pytest
-pip install qualflare-cli
+brew install qualflare/tap/qf     # or: npm install -g @qualflare/cli
 qf login my-project "$QUALFLARE_TOKEN" --force
 qf my-project collect ./qualflare-results
 ```
+
+`qualflare-cli` is a standalone Go binary, not a Python package — `pip install
+qualflare-cli` will not find anything. Homebrew and npm are the two channels;
+the release page also carries plain binaries for every platform.
 
 Configure it in `pytest.ini`, `pyproject.toml` or `setup.cfg`:
 
