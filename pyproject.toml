@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "Apache-2.0"
 authors = [{ name = "Qualflare" }]
-keywords = ["pytest", "pytest-plugin", "qualflare", "test-reporting", "test-results", "reporter"]
+keywords = ["qualflare", "pytest", "pytest-plugin", "test-reporter", "test-reporting", "test-results", "flaky-tests"]
 classifiers = [
   "Framework :: Pytest",
   "Development Status :: 4 - Beta",
@@ -34,7 +34,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Qualflare/qualflare-pytest"
+Homepage = "https://qualflare.com/pytest-test-reporting/"
 Issues = "https://github.com/Qualflare/qualflare-pytest/issues"
 Repository = "https://github.com/Qualflare/qualflare-pytest"
 
