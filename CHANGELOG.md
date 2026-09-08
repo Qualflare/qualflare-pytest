@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.2
+
+Documentation and package metadata — no code change, and nothing to do if you
+are already on 0.1.1.
+
+**The quickstart told you to `pip install qualflare-cli`.** That package does not
+exist: `qualflare-cli` is a standalone Go binary, distributed through Homebrew,
+npm and the release page. Anyone following the README verbatim hit a dead end at
+step two. The quickstart now shows the real install and says plainly why pip is
+not one of the options.
+
+`Homepage` now points at https://qualflare.com/pytest-test-reporting/ rather than
+the repository, and `keywords` matches the rest of the reporter family —
+`flaky-tests` and `test-reporter` added, the bare `reporter` dropped.
+
+Also internal: unit coverage for the metadata API, CI detection and the report
+builders in isolation, plus a dogfood suite that uploads this package's own
+results to Qualflare on every merge.
+
 ## 0.1.1
 
 Identical in behaviour to 0.1.0, which never became installable: the upload was
